@@ -47,6 +47,7 @@ const els = {
   liveToggle: document.getElementById("live-toggle"),
   openInSf: document.getElementById("open-in-sf"),
   recordingBtn: document.getElementById("recording-btn"),
+  noteBtn: document.getElementById("note-btn"),
   transcriptPane: document.getElementById("transcript-pane"),
   workflowPane: document.getElementById("workflow-pane"),
   insightsPane: document.getElementById("insights-pane"),
@@ -275,6 +276,7 @@ async function openTranscript(meeting) {
   lastRenderedCount = 0;
   unseenCount = 0;
   workflowLoaded = false;
+  cachedWorkflowActions = null;
   updateRecordingButton(null);
   switchTab("transcript");
   updateJumpButton();
@@ -529,6 +531,7 @@ function highlightCategory(text, cat) {
 async function loadWorkflow() {
   if (!currentMeeting) return;
   workflowLoaded = true;
+  cachedWorkflowActions = null;
   els.actionsList.innerHTML = "";
   els.workflowHeader.innerHTML = "";
   els.workflowStatus.textContent = "Loading workflow…";
@@ -540,6 +543,7 @@ async function loadWorkflow() {
       els.workflowStatus.textContent = data.message || "No workflow found.";
       return;
     }
+    cachedWorkflowActions = data.actions || [];
     renderWorkflow(data.workflow, data.actions || []);
     els.workflowStatus.textContent = data.actions?.length
       ? `${data.actions.length} action${data.actions.length === 1 ? "" : "s"}`
@@ -846,6 +850,7 @@ function renderMessages(messages) {
       }
       <div class="msg-body">${decorateText(m.message || "")}</div>
       <div class="msg-actions">
+        <button class="msg-act" data-act="pin" title="Pin to a workflow action">📌</button>
         <button class="msg-act" data-act="copy" title="Copy text">📋</button>
         <button class="msg-act" data-act="copy-quote" title="Copy as quote">❝</button>
         ${
@@ -881,9 +886,114 @@ function bindMessageActions(row, m) {
             url: `${instanceUrl}/${currentMeeting.Id}`,
           });
         }
+      } else if (act === "pin") {
+        openPinPicker(m, btn);
       }
     });
   });
+}
+
+let cachedWorkflowActions = null;
+async function ensureWorkflowActions() {
+  if (cachedWorkflowActions) return cachedWorkflowActions;
+  if (!currentMeeting?.Id) return [];
+  const data = await send("sf.fetchWorkflow", { meetingId: currentMeeting.Id });
+  cachedWorkflowActions = data.actions || [];
+  return cachedWorkflowActions;
+}
+
+async function openPinPicker(message, anchor) {
+  document.querySelectorAll(".status-menu").forEach((m) => m.remove());
+  const menu = document.createElement("div");
+  menu.className = "status-menu pin-menu";
+  menu.innerHTML = '<div class="pin-loading muted small">Loading actions…</div>';
+  document.body.appendChild(menu);
+  positionMenu(menu, anchor);
+
+  let actions = [];
+  try {
+    actions = await ensureWorkflowActions();
+  } catch (e) {
+    menu.innerHTML = `<div class="pin-loading error">${escapeHtml(e.message)}</div>`;
+    return;
+  }
+  if (!actions.length) {
+    menu.innerHTML = '<div class="pin-loading muted small">No workflow actions found for this meeting.</div>';
+    return;
+  }
+  menu.innerHTML = "";
+  const header = document.createElement("div");
+  header.className = "pin-header muted small";
+  header.textContent = "Pin this message to…";
+  menu.appendChild(header);
+  for (const a of actions.slice(0, 50)) {
+    const item = document.createElement("button");
+    item.className = "status-menu-item";
+    item.innerHTML = `
+      <span class="action-name">${escapeHtml(a.Name || "Action")}</span>
+      <span class="muted small">${escapeHtml(a.ple__Status__c || "—")}</span>
+    `;
+    item.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      item.disabled = true;
+      item.textContent = "Pinning…";
+      try {
+        const speaker = message.participantName || "Unknown";
+        const time = message.createDate
+          ? new Date(message.createDate).toLocaleString()
+          : "";
+        const quoted = [
+          `Pinned from meeting transcript:`,
+          ``,
+          `"${(message.message || "").slice(0, 800)}"`,
+          ``,
+          `— ${speaker}${time ? " · " + time : ""}`,
+        ].join("\n");
+        await send("sf.pinToAction", {
+          actionId: a.Id,
+          text: quoted,
+        });
+        menu.innerHTML = `<div class="pin-loading success">Pinned to ${escapeHtml(a.Name || "action")}.</div>`;
+        setTimeout(() => menu.remove(), 1400);
+      } catch (err) {
+        menu.innerHTML = `<div class="pin-loading error">${escapeHtml(err.message)}</div>`;
+      }
+    });
+    menu.appendChild(item);
+  }
+
+  const closer = (e) => {
+    if (!menu.contains(e.target)) {
+      menu.remove();
+      document.removeEventListener("mousedown", closer);
+    }
+  };
+  setTimeout(() => document.addEventListener("mousedown", closer), 0);
+}
+
+function positionMenu(menu, anchor) {
+  const r = anchor.getBoundingClientRect();
+  menu.style.position = "fixed";
+  menu.style.top = `${r.bottom + 4}px`;
+  menu.style.left = `${Math.max(8, r.left - 100)}px`;
+  menu.style.maxHeight = `${Math.min(360, window.innerHeight - r.bottom - 16)}px`;
+  menu.style.overflowY = "auto";
+}
+
+async function postMeetingNote() {
+  if (!currentMeeting?.Id) return;
+  const text = prompt("Note to post on this meeting (visible in Salesforce Chatter):", "");
+  if (!text || !text.trim()) return;
+  try {
+    els.transcriptStatus.textContent = "Posting note…";
+    await send("sf.postNoteOnMeeting", {
+      meetingId: currentMeeting.Id,
+      text: text.trim(),
+    });
+    els.transcriptStatus.textContent = "Note posted.";
+  } catch (e) {
+    els.transcriptStatus.textContent = e.message;
+  }
 }
 
 function flashActionLabel(btn, text) {
@@ -1067,6 +1177,8 @@ els.openInSf.addEventListener("click", () => {
     chrome.tabs.create({ url: `${instanceUrl}/${currentMeeting.Id}` });
   }
 });
+
+els.noteBtn.addEventListener("click", () => postMeetingNote());
 
 els.recordingBtn.addEventListener("click", () => {
   if (currentRecording && instanceUrl) {

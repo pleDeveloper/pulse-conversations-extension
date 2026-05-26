@@ -57,6 +57,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             data: await fetchActionStatuses(msg.configActionId),
           });
           break;
+        case "sf.pinToAction":
+          sendResponse({
+            ok: true,
+            data: await pinToAction(msg.actionId, msg.text),
+          });
+          break;
+        case "sf.postNoteOnMeeting":
+          sendResponse({
+            ok: true,
+            data: await postNoteOnMeeting(msg.meetingId, msg.text),
+          });
+          break;
         case "ai.coach":
           sendResponse({
             ok: true,
@@ -359,6 +371,36 @@ async function matchMeeting(tabUrl) {
     totalCandidates: scored.length,
     otherUsers,
   };
+}
+
+async function postChatter(recordId, body) {
+  if (!recordId || !body) throw new Error("Missing recordId or text");
+  const payload = {
+    body: { messageSegments: [{ type: "Text", text: body }] },
+    feedElementType: "FeedItem",
+    subjectId: recordId,
+  };
+  const resp = await sfFetch(
+    `/services/data/${API_VERSION}/chatter/feed-elements`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Chatter post failed: ${resp.status} ${text}`);
+  }
+  return resp.json();
+}
+
+async function pinToAction(actionId, text) {
+  return postChatter(actionId, text);
+}
+
+async function postNoteOnMeeting(meetingId, text) {
+  return postChatter(meetingId, text);
 }
 
 async function updateAction(actionId, fields) {
