@@ -48,6 +48,8 @@ const els = {
   openInSf: document.getElementById("open-in-sf"),
   transcriptPane: document.getElementById("transcript-pane"),
   workflowPane: document.getElementById("workflow-pane"),
+  insightsPane: document.getElementById("insights-pane"),
+  insightsList: document.getElementById("insights-list"),
   workflowHeader: document.getElementById("workflow-header"),
   actionsList: document.getElementById("actions-list"),
   workflowStatus: document.getElementById("workflow-status"),
@@ -273,7 +275,121 @@ function switchTab(name) {
   els.tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
   els.transcriptPane.classList.toggle("hidden", name !== "transcript");
   els.workflowPane.classList.toggle("hidden", name !== "workflow");
+  els.insightsPane.classList.toggle("hidden", name !== "insights");
   if (name === "workflow" && !workflowLoaded) loadWorkflow();
+  if (name === "insights") renderInsights();
+}
+
+function renderInsights() {
+  els.insightsList.innerHTML = "";
+  if (!allMessages.length) {
+    els.insightsList.innerHTML =
+      '<div class="empty muted small" style="margin: 24px auto; text-align: center;">No messages yet — insights will appear once the transcript starts.</div>';
+    return;
+  }
+
+  // Speaker talk-share by approximate word count
+  const speakerStats = new Map();
+  let totalWords = 0;
+  for (const m of allMessages) {
+    const s = m.participantName || "Unknown";
+    const words = (m.message || "").split(/\s+/).filter(Boolean).length;
+    const cur = speakerStats.get(s) || { words: 0, count: 0 };
+    cur.words += words;
+    cur.count += 1;
+    speakerStats.set(s, cur);
+    totalWords += words;
+  }
+
+  // Keyword hits across categories with sample excerpts
+  const hits = { risk: [], positive: [], strategic: [] };
+  for (const m of allMessages) {
+    const text = m.message || "";
+    const speaker = m.participantName || "Unknown";
+    const time = m.createDate ? new Date(m.createDate) : null;
+    for (const [cat, words] of Object.entries(KEYWORDS)) {
+      const re = new RegExp(`\\b(${words.map(escapeRegex).join("|")})\\b`, "gi");
+      const found = text.match(re);
+      if (found && found.length) {
+        hits[cat].push({ text, speaker, time, matches: found });
+      }
+    }
+  }
+
+  els.insightsList.appendChild(
+    insightsCard(
+      "Meeting overview",
+      "",
+      `
+      <div class="kv-grid">
+        <div><b>${allMessages.length}</b><span>messages</span></div>
+        <div><b>${speakerStats.size}</b><span>speakers</span></div>
+        <div><b>${totalWords.toLocaleString()}</b><span>words</span></div>
+      </div>
+    `
+    )
+  );
+
+  const speakersHtml = [...speakerStats.entries()]
+    .sort((a, b) => b[1].words - a[1].words)
+    .map(([name, st]) => {
+      const pct = totalWords ? Math.round((st.words / totalWords) * 100) : 0;
+      return `
+        <div class="speaker-row">
+          <div class="speaker-row-top">
+            <span class="avatar small" style="background:${colorFor(name)}">${initials(name)}</span>
+            <span class="speaker">${escapeHtml(name)}</span>
+            <span class="muted small">${pct}% · ${st.count} msg</span>
+          </div>
+          <div class="bar"><div class="bar-fill" style="width:${pct}%; background:${colorFor(name)}"></div></div>
+        </div>
+      `;
+    })
+    .join("");
+  els.insightsList.appendChild(
+    insightsCard("Talk share", "Approximate by word count.", speakersHtml)
+  );
+
+  for (const cat of ["risk", "positive", "strategic"]) {
+    const list = hits[cat];
+    if (!list.length) continue;
+    const label = cat === "risk" ? "Risk mentions" : cat === "positive" ? "Positive moments" : "Strategic mentions";
+    const samples = list.slice(0, 5).map((h) => `
+      <div class="insight-snippet">
+        <div class="muted small">${escapeHtml(h.speaker)}${h.time ? " · " + h.time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</div>
+        <div>${highlightCategory(h.text, cat)}</div>
+      </div>
+    `).join("");
+    els.insightsList.appendChild(
+      insightsCard(
+        `${label} (${list.length})`,
+        list.length > 5 ? `Showing 5 of ${list.length}` : "",
+        samples,
+        cat
+      )
+    );
+  }
+}
+
+function insightsCard(title, subtitle, bodyHtml, cat = "") {
+  const div = document.createElement("div");
+  div.className = "insight-card" + (cat ? " insight-" + cat : "");
+  div.innerHTML = `
+    <div class="insight-title">${escapeHtml(title)}</div>
+    ${subtitle ? `<div class="muted small">${escapeHtml(subtitle)}</div>` : ""}
+    <div class="insight-body">${bodyHtml}</div>
+  `;
+  return div;
+}
+
+function highlightCategory(text, cat) {
+  const words = KEYWORDS[cat] || [];
+  let escaped = escapeHtml(text);
+  if (words.length) {
+    const re = new RegExp(`\\b(${words.map(escapeRegex).join("|")})\\b`, "gi");
+    escaped = escaped.replace(re, `<span class="hl-${cat}">$1</span>`);
+  }
+  return escaped;
 }
 
 async function loadWorkflow() {
@@ -374,6 +490,7 @@ async function loadTranscript() {
       updateJumpButton();
     }
     lastRenderedCount = newMessages.length;
+    if (activeTab === "insights") renderInsights();
     if (!newMessages.length) {
       els.transcriptStatus.textContent = data.message || "No messages yet.";
     } else {
