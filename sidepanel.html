@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pulse Conversations</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        <span class="brand-text">Pulse Conversations</span>
+      </div>
+      <div class="topbar-actions">
+        <button id="back-btn" class="icon-btn hidden" title="Back to list">&larr;</button>
+        <button id="refresh-btn" class="icon-btn hidden" title="Refresh">&#x21bb;</button>
+        <button id="settings-btn" class="icon-btn" title="Settings">&#9881;</button>
+        <button id="signout-btn" class="icon-btn hidden" title="Sign out">&#x23FB;</button>
+      </div>
+    </header>
+
+    <div id="context-bar" class="context-bar hidden">
+      <div class="context-dot"></div>
+      <div class="context-text">
+        <div id="context-title">Looking for a match…</div>
+        <div id="context-sub" class="muted small"></div>
+      </div>
+      <button id="context-action" class="secondary">View</button>
+    </div>
+
+    <section id="auth-view" class="view hidden">
+      <div class="empty">
+        <h2>Connect to Salesforce</h2>
+        <p id="auth-instance" class="muted"></p>
+        <button id="login-btn" class="primary">Sign in</button>
+        <p id="auth-error" class="error"></p>
+        <p class="muted small">
+          Need to configure the org / Connected App?
+          <a href="#" id="open-options">Open settings</a>.
+        </p>
+      </div>
+    </section>
+
+    <section id="list-view" class="view hidden">
+      <div class="search-row">
+        <input id="search-input" type="search" placeholder="Search meetings or patients…" />
+      </div>
+      <div id="meetings" class="meeting-list"></div>
+      <p id="list-status" class="muted small center"></p>
+    </section>
+
+    <section id="transcript-view" class="view hidden">
+      <div class="transcript-header">
+        <div>
+          <div id="transcript-title" class="transcript-title"></div>
+          <div id="transcript-sub" class="muted small"></div>
+        </div>
+        <label class="live-toggle">
+          <input type="checkbox" id="live-toggle" checked />
+          <span>Live</span>
+        </label>
+      </div>
+      <div id="messages" class="messages"></div>
+      <p id="transcript-status" class="muted small center"></p>
+    </section>
+
+    <script src="sidepanel.js" type="module"></script>
+  </body>
+</html>

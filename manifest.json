@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Pulse Conversations",
+  "version": "0.1.0",
+  "description": "Side-panel viewer for Pulse live transcripts stored on ple__Meeting__c.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "identity",
+    "storage",
+    "sidePanel",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://*.salesforce.com/*",
+    "https://*.force.com/*",
+    "https://*.my.salesforce.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "Pulse Conversations",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "128": "icons/icon128.png"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0N1BAqhv9hzfSWVsLfwMv19dW7TA2fx2mH3Gs18P3hTagtghei6JgRqx0xfXMl7A3eL2tP/dQXbAXXA1oyYtvu2X1Jbs9g9Os0s6EOdzmDZWM3FWsy65CMgJRECStHibEde9C5KB/8w/zMQd4vUYzw6Ou+O7gkrEBv0kA2Q1AFEv9nwJtjVQ/CndNwnWGYJ/Qdhtqyumsy8crruHg0t7A6w9nkAl4FymyvAOh1hKmdSM+qJmLkl3lsGrBMShVYt8KBSVvqiZcNgcrU2zXPsHkK3adEI2KbeM8fbb+TyiUKUMJPoLIiaNHINF+I/WDMwrgsPP34DRRQoPrrtLNUZpawIDAQAB"
+}

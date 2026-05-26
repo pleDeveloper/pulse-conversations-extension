@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Pulse Conversations · Settings</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body class="options">
+    <main>
+      <h1>Pulse Conversations · Settings</h1>
+      <p class="muted small">
+        Configure the Salesforce org and Connected App this extension talks to.
+      </p>
+
+      <div class="callback-card">
+        <div class="callback-label">
+          Your extension's OAuth Callback URL
+          <span class="hint">
+            This must match the Callback URL in the Salesforce Connected App
+            exactly.
+          </span>
+        </div>
+        <div class="callback-row">
+          <code id="redirect-uri">…</code>
+          <button id="copy-redirect" class="secondary" type="button">Copy</button>
+        </div>
+        <div class="callback-label" style="margin-top:8px;">
+          Extension ID
+        </div>
+        <div class="callback-row">
+          <code id="extension-id">…</code>
+        </div>
+      </div>
+
+      <label>
+        Instance URL
+        <input
+          id="instance"
+          type="url"
+          placeholder="https://your-domain.my.salesforce.com"
+        />
+        <span class="hint">My Domain URL of the org. No trailing slash.</span>
+      </label>
+
+      <label>
+        Connected App Consumer Key (Client ID)
+        <input id="client-id" type="text" placeholder="3MVG9..." />
+        <span class="hint">
+          Setup → App Manager → your Connected App → View → API (Enable OAuth
+          Settings).
+        </span>
+      </label>
+
+      <div class="row">
+        <button id="save" class="primary">Save</button>
+        <span id="status" class="muted small"></span>
+      </div>
+
+      <hr />
+
+      <h2>Setup checklist</h2>
+      <ol class="muted small">
+        <li>
+          Load this extension at <code>chrome://extensions</code> (Developer
+          Mode → Load Unpacked).
+        </li>
+        <li>
+          In Salesforce Setup → App Manager → your Connected App, set
+          <strong>Callback URL</strong> to the value above, scopes
+          <code>api</code> + <code>refresh_token</code>, PKCE on, secret not
+          required.
+        </li>
+        <li>Paste the Consumer Key above and Save.</li>
+      </ol>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

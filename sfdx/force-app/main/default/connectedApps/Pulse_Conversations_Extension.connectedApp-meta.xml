@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ConnectedApp xmlns="http://soap.sforce.com/2006/04/metadata">
+    <contactEmail>damian@madisonaveconsulting.com</contactEmail>
+    <description>Side-panel viewer for Pulse live transcripts. PKCE OAuth flow from a Chrome extension.</description>
+    <label>Pulse Conversations Extension</label>
+    <oauthConfig>
+        <callbackUrl>https://glakobpfhjeknpmpahbfcjlfneinhgib.chromiumapp.org/
+https://glakobpfhjeknpmpahbfcjlfneinhgib.chromiumapp.org</callbackUrl>
+        <consumerKey>3MVG9rZjd7MXFdLhPX5wdzr9rbQ0ljtFW5UE0m_c8JWxusiRmUEOVsC21kiCj_yJLtNPfuoDqwEJJwCFPzPNQ</consumerKey>
+        <isAdminApproved>false</isAdminApproved>
+        <isClientCredentialEnabled>false</isClientCredentialEnabled>
+        <isCodeCredentialEnabled>false</isCodeCredentialEnabled>
+        <isCodeCredentialPostOnly>false</isCodeCredentialPostOnly>
+        <isConsumerSecretOptional>true</isConsumerSecretOptional>
+        <isIntrospectAllTokens>false</isIntrospectAllTokens>
+        <isNamedUserJwtEnabled>false</isNamedUserJwtEnabled>
+        <isPkceRequired>true</isPkceRequired>
+        <isRefreshTokenRotationEnabled>false</isRefreshTokenRotationEnabled>
+        <isSecretRequiredForRefreshToken>false</isSecretRequiredForRefreshToken>
+        <isSecretRequiredForTokenExchange>false</isSecretRequiredForTokenExchange>
+        <isTokenExchangeEnabled>false</isTokenExchangeEnabled>
+        <scopes>Api</scopes>
+        <scopes>RefreshToken</scopes>
+    </oauthConfig>
+    <oauthPolicy>
+        <ipRelaxation>ENFORCE</ipRelaxation>
+        <isTokenExchangeFlowEnabled>false</isTokenExchangeFlowEnabled>
+        <refreshTokenPolicy>infinite</refreshTokenPolicy>
+    </oauthPolicy>
+</ConnectedApp>

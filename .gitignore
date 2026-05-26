@@ -1,0 +1,15 @@
+# Secrets / private keys — never commit
+key.pem
+.extension-info.json
+
+# Build artifacts
+pulse-conversations-*.zip
+
+# SFDX runtime state (project files are kept; runtime/cache is not)
+sfdx/.sf/
+sfdx/.sfdx/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
