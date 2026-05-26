@@ -1,6 +1,7 @@
 const els = {
   instance: document.getElementById("instance"),
   clientId: document.getElementById("client-id"),
+  anthropicKey: document.getElementById("anthropic-key"),
   save: document.getElementById("save"),
   status: document.getElementById("status"),
   redirect: document.getElementById("redirect-uri"),
@@ -12,19 +13,21 @@ const redirectUrl = chrome.identity.getRedirectURL();
 els.redirect.textContent = redirectUrl;
 els.extensionId.textContent = chrome.runtime.id;
 
-chrome.storage.local.get(["instanceUrl", "clientId"], (cfg) => {
+chrome.storage.local.get(["instanceUrl", "clientId", "anthropicKey"], (cfg) => {
   els.instance.value = cfg.instanceUrl || "";
   els.clientId.value = cfg.clientId || "";
+  els.anthropicKey.value = cfg.anthropicKey || "";
 });
 
 els.save.addEventListener("click", async () => {
   const instanceUrl = els.instance.value.trim().replace(/\/$/, "");
   const clientId = els.clientId.value.trim();
+  const anthropicKey = els.anthropicKey.value.trim();
   if (!instanceUrl || !clientId) {
-    els.status.textContent = "Both fields are required.";
+    els.status.textContent = "Instance URL and Client ID are required.";
     return;
   }
-  await chrome.storage.local.set({ instanceUrl, clientId });
+  await chrome.storage.local.set({ instanceUrl, clientId, anthropicKey });
   els.status.textContent = "Saved.";
   setTimeout(() => (els.status.textContent = ""), 2000);
 });

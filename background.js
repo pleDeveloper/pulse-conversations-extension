@@ -45,6 +45,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             data: await fetchWorkflow(msg.meetingId),
           });
           break;
+        case "sf.updateAction":
+          sendResponse({
+            ok: true,
+            data: await updateAction(msg.actionId, msg.fields),
+          });
+          break;
+        case "sf.fetchActionStatuses":
+          sendResponse({
+            ok: true,
+            data: await fetchActionStatuses(msg.configActionId),
+          });
+          break;
+        case "ai.coach":
+          sendResponse({
+            ok: true,
+            data: await coach(msg.mode, msg.messages, msg.meeting),
+          });
+          break;
         default:
           sendResponse({ ok: false, error: "Unknown message type" });
       }
@@ -343,6 +361,111 @@ async function matchMeeting(tabUrl) {
   };
 }
 
+async function updateAction(actionId, fields) {
+  if (!actionId) throw new Error("Missing actionId");
+  if (!fields || !Object.keys(fields).length) throw new Error("No fields to update");
+  const resp = await sfFetch(
+    `/services/data/${API_VERSION}/sobjects/ple__Action__c/${actionId}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(fields),
+    }
+  );
+  if (!resp.ok && resp.status !== 204) {
+    const text = await resp.text();
+    throw new Error(`Update failed: ${resp.status} ${text}`);
+  }
+  return { ok: true };
+}
+
+async function fetchActionStatuses(configActionId) {
+  if (!configActionId) return { statuses: [] };
+  const safe = configActionId.replace(/'/g, "\\'");
+  const soql =
+    `SELECT ple__Status__c, ple__Status_Order__c ` +
+    `FROM ple__Config_Action_Status__c ` +
+    `WHERE ple__Config_Action__c='${safe}' ` +
+    `ORDER BY ple__Status_Order__c NULLS LAST, ple__Status__c LIMIT 50`;
+  const data = await sfQuery(soql);
+  const seen = new Set();
+  const statuses = [];
+  for (const r of data.records || []) {
+    const s = r.ple__Status__c;
+    if (s && !seen.has(s)) {
+      seen.add(s);
+      statuses.push(s);
+    }
+  }
+  return { statuses };
+}
+
+async function coach(mode, messages, meeting) {
+  const { anthropicKey } = await chrome.storage.local.get(["anthropicKey"]);
+  if (!anthropicKey) {
+    throw new Error(
+      "Anthropic API key not set. Open the extension settings and paste a key from console.anthropic.com."
+    );
+  }
+  if (!Array.isArray(messages) || messages.length === 0) {
+    throw new Error("No transcript messages available yet to coach on.");
+  }
+  const transcript = messages
+    .map(
+      (m) =>
+        `[${m.createDate ? new Date(m.createDate).toLocaleTimeString() : "?"}] ${
+          m.participantName || "Unknown"
+        }: ${m.message || ""}`
+    )
+    .join("\n");
+  const prompt = buildCoachPrompt(mode, transcript, meeting);
+  const body = {
+    model: "claude-sonnet-4-6",
+    max_tokens: 1200,
+    messages: [{ role: "user", content: prompt }],
+  };
+  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": anthropicKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`Claude error ${resp.status}: ${text.slice(0, 300)}`);
+  }
+  const data = await resp.json();
+  const text = (data.content || [])
+    .filter((b) => b.type === "text")
+    .map((b) => b.text)
+    .join("\n\n");
+  return { text, usage: data.usage };
+}
+
+function buildCoachPrompt(mode, transcript, meeting) {
+  const meetingHeader = `Meeting: ${meeting?.Name || "Unknown"}\nAccount: ${
+    meeting?.AccountPulse__r?.Name || "Unknown"
+  }`;
+  const tasks = {
+    "next-steps":
+      "Identify 3-5 concrete next-best actions the rep should take after this call. For each: action, owner, why, suggested due date. Be specific to what was said.",
+    bant:
+      "Summarize what was discussed in BANT format (Budget, Authority, Need, Timeline). For each section: what was explicitly stated, what was implied, what is still unknown.",
+    risks:
+      "List risks, objections, blockers, or concerns raised. For each: who raised it, what they said (short quote), severity (low/medium/high), and how to address it.",
+    followups:
+      "Draft a short follow-up email (subject + body, under 150 words) the rep can send today. Recap key points, confirm next steps, and ask one targeted clarifying question.",
+    summary:
+      "Write a tight 2-paragraph recap: paragraph 1 is what was discussed; paragraph 2 is the resulting commitments and what to do next.",
+  };
+  const task = tasks[mode] || tasks["next-steps"];
+  return `You are a sales/account-management coach reading a live meeting transcript. ${task}\n\nReturn well-structured markdown.\n\n${meetingHeader}\n\nTranscript:\n${transcript}`;
+}
+
 // Map from Meeting parent reference to matching Workflow parent reference.
 const PARENT_LINKS = [
   { meetingField: "ReferralPulse__c", workflowField: "ple__Referral__c" },
@@ -404,6 +527,8 @@ async function fetchWorkflow(meetingId) {
   return { workflow, actions: aResp.records || [] };
 }
 
+const VIDEO_FILE_TYPES = ["MP4", "WEBM", "MOV", "M4V", "M4A", "MP3"];
+
 async function fetchTranscript(meetingId) {
   if (!meetingId) throw new Error("Missing meetingId.");
 
@@ -416,10 +541,35 @@ async function fetchTranscript(meetingId) {
     return { messages: [], message: "No transcript attached yet." };
   }
   const idList = docIds.map((id) => `'${id}'`).join(",");
-  const cvSoql = `SELECT Id, Title, FileType, ContentDocumentId, CreatedDate FROM ContentVersion WHERE ContentDocumentId IN (${idList}) AND FileType='JSON' AND Title LIKE 'Meeting_Transcript_%' ORDER BY CreatedDate DESC LIMIT 1`;
+  const cvSoql =
+    `SELECT Id, Title, FileType, ContentDocumentId, CreatedDate, ContentSize ` +
+    `FROM ContentVersion WHERE ContentDocumentId IN (${idList}) ` +
+    `ORDER BY CreatedDate DESC LIMIT 100`;
   const cvs = await sfQuery(cvSoql);
-  const cv = (cvs.records || [])[0];
-  if (!cv) return { messages: [], message: "No transcript JSON found." };
+  const all = cvs.records || [];
+  const cv = all.find(
+    (r) => r.FileType === "JSON" && (r.Title || "").startsWith("Meeting_Transcript_")
+  );
+  const recording = all.find((r) => VIDEO_FILE_TYPES.includes(r.FileType));
+
+  const result = {
+    messages: [],
+    contentVersionId: cv?.Id || null,
+    title: cv?.Title || null,
+    recording: recording
+      ? {
+          contentDocumentId: recording.ContentDocumentId,
+          contentVersionId: recording.Id,
+          fileType: recording.FileType,
+          title: recording.Title,
+          size: recording.ContentSize,
+        }
+      : null,
+  };
+  if (!cv) {
+    result.message = "No transcript JSON found.";
+    return result;
+  }
 
   const dataResp = await sfFetch(
     `/services/data/${API_VERSION}/sobjects/ContentVersion/${cv.Id}/VersionData`
@@ -436,5 +586,6 @@ async function fetchTranscript(meetingId) {
     throw new Error("Transcript file is not valid JSON.");
   }
   messages.sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
-  return { messages, contentVersionId: cv.Id, title: cv.Title };
+  result.messages = messages;
+  return result;
 }

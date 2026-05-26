@@ -46,10 +46,17 @@ const els = {
   transcriptStatus: document.getElementById("transcript-status"),
   liveToggle: document.getElementById("live-toggle"),
   openInSf: document.getElementById("open-in-sf"),
+  recordingBtn: document.getElementById("recording-btn"),
   transcriptPane: document.getElementById("transcript-pane"),
   workflowPane: document.getElementById("workflow-pane"),
   insightsPane: document.getElementById("insights-pane"),
   insightsList: document.getElementById("insights-list"),
+  coachingPane: document.getElementById("coaching-pane"),
+  coachingGenerate: document.getElementById("coaching-generate"),
+  coachingMode: document.getElementById("coaching-mode"),
+  coachingOutput: document.getElementById("coaching-output"),
+  coachingStatus: document.getElementById("coaching-status"),
+  coachingMeta: document.getElementById("coaching-meta"),
   workflowHeader: document.getElementById("workflow-header"),
   actionsList: document.getElementById("actions-list"),
   workflowStatus: document.getElementById("workflow-status"),
@@ -75,6 +82,8 @@ let unseenCount = 0;
 let instanceUrl = "";
 let activeTab = "transcript";
 let workflowLoaded = false;
+let lastCoachingMode = null;
+const statusOptionsCache = new Map();
 
 function send(type, payload = {}) {
   return new Promise((resolve, reject) => {
@@ -255,6 +264,9 @@ async function openTranscript(meeting) {
   els.actionsList.innerHTML = "";
   els.workflowHeader.innerHTML = "";
   els.workflowStatus.textContent = "";
+  els.coachingOutput.innerHTML = "";
+  els.coachingStatus.textContent = "";
+  els.coachingMeta.textContent = "";
   els.transcriptStatus.textContent = "Loading…";
   els.transcriptSearch.value = "";
   transcriptSearchTerm = "";
@@ -263,6 +275,7 @@ async function openTranscript(meeting) {
   lastRenderedCount = 0;
   unseenCount = 0;
   workflowLoaded = false;
+  updateRecordingButton(null);
   switchTab("transcript");
   updateJumpButton();
   show(els.transcriptView);
@@ -275,9 +288,130 @@ function switchTab(name) {
   els.tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
   els.transcriptPane.classList.toggle("hidden", name !== "transcript");
   els.workflowPane.classList.toggle("hidden", name !== "workflow");
+  els.coachingPane.classList.toggle("hidden", name !== "coaching");
   els.insightsPane.classList.toggle("hidden", name !== "insights");
   if (name === "workflow" && !workflowLoaded) loadWorkflow();
   if (name === "insights") renderInsights();
+}
+
+async function generateCoaching() {
+  const mode = els.coachingMode.value;
+  if (!currentMeeting) {
+    els.coachingStatus.textContent = "Open a meeting first.";
+    return;
+  }
+  if (!allMessages.length) {
+    els.coachingStatus.textContent = "No transcript yet — wait until messages arrive.";
+    return;
+  }
+  els.coachingGenerate.disabled = true;
+  els.coachingGenerate.textContent = "Generating…";
+  els.coachingStatus.textContent = "";
+  els.coachingOutput.innerHTML = '<div class="coaching-loading">Thinking…</div>';
+  try {
+    const data = await send("ai.coach", {
+      mode,
+      messages: allMessages,
+      meeting: {
+        Name: currentMeeting.Name,
+        AccountPulse__r: currentMeeting.AccountPulse__r,
+      },
+    });
+    els.coachingOutput.innerHTML = renderMarkdown(data.text || "(no output)");
+    lastCoachingMode = mode;
+    const usage = data.usage || {};
+    els.coachingMeta.textContent =
+      usage.input_tokens || usage.output_tokens
+        ? `${usage.input_tokens || 0} in · ${usage.output_tokens || 0} out tokens`
+        : "";
+  } catch (e) {
+    els.coachingOutput.innerHTML = "";
+    els.coachingStatus.textContent = e.message;
+  } finally {
+    els.coachingGenerate.disabled = false;
+    els.coachingGenerate.textContent = "Generate coaching";
+  }
+}
+
+function renderMarkdown(md) {
+  if (!md) return "";
+  const escaped = escapeHtml(md);
+  const lines = escaped.split(/\r?\n/);
+  const out = [];
+  let listType = null;
+  const flushList = () => {
+    if (listType) {
+      out.push(`</${listType}>`);
+      listType = null;
+    }
+  };
+  let inPara = false;
+  const flushPara = () => {
+    if (inPara) {
+      out.push("</p>");
+      inPara = false;
+    }
+  };
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, "");
+    if (!line.trim()) {
+      flushList();
+      flushPara();
+      continue;
+    }
+    const h = line.match(/^(#{1,4})\s+(.*)/);
+    if (h) {
+      flushList();
+      flushPara();
+      const n = Math.min(4, h[1].length);
+      out.push(`<h${n + 1}>${formatInline(h[2])}</h${n + 1}>`);
+      continue;
+    }
+    const bullet = line.match(/^[-*+]\s+(.*)/);
+    if (bullet) {
+      flushPara();
+      if (listType !== "ul") {
+        flushList();
+        out.push("<ul>");
+        listType = "ul";
+      }
+      out.push(`<li>${formatInline(bullet[1])}</li>`);
+      continue;
+    }
+    const num = line.match(/^\d+\.\s+(.*)/);
+    if (num) {
+      flushPara();
+      if (listType !== "ol") {
+        flushList();
+        out.push("<ol>");
+        listType = "ol";
+      }
+      out.push(`<li>${formatInline(num[1])}</li>`);
+      continue;
+    }
+    flushList();
+    if (!inPara) {
+      out.push("<p>");
+      inPara = true;
+    } else {
+      out.push("<br>");
+    }
+    out.push(formatInline(line));
+  }
+  flushList();
+  flushPara();
+  return out.join("");
+}
+
+function formatInline(s) {
+  return s
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[\s(])\*([^*]+)\*(?=[\s).,;:!?]|$)/g, "$1<em>$2</em>")
+    .replace(
+      /(\bhttps?:\/\/[^\s<]+)/g,
+      '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+    );
 }
 
 function renderInsights() {
@@ -436,19 +570,101 @@ function renderWorkflow(workflow, actions) {
     return (a.Name || "").localeCompare(b.Name || "");
   });
   for (const a of sorted) {
-    const card = document.createElement("button");
+    const card = document.createElement("div");
     card.className = "action-card status-" + statusClass(a.ple__Status__c);
     card.innerHTML = `
       <div class="action-row-top">
-        <span class="status-pill">${escapeHtml(a.ple__Status__c || "—")}</span>
+        <button class="status-pill" data-act="edit-status" title="Change status">${escapeHtml(a.ple__Status__c || "—")}</button>
         <span class="action-name">${escapeHtml(a.Name || "Action")}</span>
+        <button class="icon-btn small" data-act="open-action" title="Open in Salesforce">↗</button>
       </div>
       <div class="muted small">Updated ${formatRelative(a.LastModifiedDate)}</div>
     `;
-    card.addEventListener("click", () => {
-      if (instanceUrl) chrome.tabs.create({ url: `${instanceUrl}/${a.Id}` });
-    });
+    bindActionCard(card, a);
     els.actionsList.appendChild(card);
+  }
+}
+
+function bindActionCard(card, action) {
+  const pill = card.querySelector('[data-act="edit-status"]');
+  const open = card.querySelector('[data-act="open-action"]');
+  if (open) {
+    open.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (instanceUrl) chrome.tabs.create({ url: `${instanceUrl}/${action.Id}` });
+    });
+  }
+  if (pill) {
+    pill.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openStatusEditor(action, pill);
+    });
+  }
+}
+
+async function openStatusEditor(action, anchor) {
+  document.querySelectorAll(".status-menu").forEach((m) => m.remove());
+
+  const configActionId = action.ple__Config_Action_Id__c;
+  let statuses = statusOptionsCache.get(configActionId);
+  if (!statuses) {
+    try {
+      const data = await send("sf.fetchActionStatuses", { configActionId });
+      statuses = data.statuses || [];
+    } catch (e) {
+      statuses = [];
+    }
+    statusOptionsCache.set(configActionId, statuses);
+  }
+  if (!statuses.length) {
+    statuses = ["Open", "In Progress", "On Hold", "Complete"];
+  }
+
+  const menu = document.createElement("div");
+  menu.className = "status-menu";
+  for (const s of statuses) {
+    const item = document.createElement("button");
+    item.className = "status-menu-item" + (s === action.ple__Status__c ? " current" : "");
+    item.textContent = s;
+    item.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      menu.remove();
+      await applyStatusChange(action, s);
+    });
+    menu.appendChild(item);
+  }
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.position = "fixed";
+  menu.style.top = `${r.bottom + 4}px`;
+  menu.style.left = `${r.left}px`;
+
+  const closer = (e) => {
+    if (!menu.contains(e.target)) {
+      menu.remove();
+      document.removeEventListener("mousedown", closer);
+    }
+  };
+  setTimeout(() => document.addEventListener("mousedown", closer), 0);
+}
+
+async function applyStatusChange(action, newStatus) {
+  if (!newStatus || newStatus === action.ple__Status__c) return;
+  const card = [...document.querySelectorAll(".action-card")].find((c) =>
+    c.textContent.includes(action.Name || "")
+  );
+  const prevPill = card?.querySelector(".status-pill")?.textContent;
+  if (card) card.classList.add("saving");
+  try {
+    await send("sf.updateAction", {
+      actionId: action.Id,
+      fields: { ple__Status__c: newStatus },
+    });
+    workflowLoaded = false;
+    await loadWorkflow();
+  } catch (e) {
+    if (card) card.classList.remove("saving");
+    els.workflowStatus.textContent = e.message;
   }
 }
 
@@ -478,6 +694,7 @@ async function loadTranscript() {
       meetingId: currentMeeting.Id,
     });
     const newMessages = data.messages || [];
+    updateRecordingButton(data.recording);
     const grew = newMessages.length > allMessages.length;
     const atBottom = isAtBottom();
     allMessages = newMessages;
@@ -498,6 +715,17 @@ async function loadTranscript() {
     }
   } catch (e) {
     els.transcriptStatus.textContent = e.message;
+  }
+}
+
+let currentRecording = null;
+function updateRecordingButton(recording) {
+  currentRecording = recording || null;
+  if (recording && instanceUrl) {
+    els.recordingBtn.classList.remove("hidden");
+    els.recordingBtn.title = `Open ${recording.fileType} recording in Salesforce`;
+  } else {
+    els.recordingBtn.classList.add("hidden");
   }
 }
 
@@ -832,9 +1060,19 @@ els.tabs.forEach((t) =>
   t.addEventListener("click", () => switchTab(t.dataset.tab))
 );
 
+els.coachingGenerate.addEventListener("click", () => generateCoaching());
+
 els.openInSf.addEventListener("click", () => {
   if (instanceUrl && currentMeeting?.Id) {
     chrome.tabs.create({ url: `${instanceUrl}/${currentMeeting.Id}` });
+  }
+});
+
+els.recordingBtn.addEventListener("click", () => {
+  if (currentRecording && instanceUrl) {
+    chrome.tabs.create({
+      url: `${instanceUrl}/lightning/r/ContentDocument/${currentRecording.contentDocumentId}/view`,
+    });
   }
 });
 

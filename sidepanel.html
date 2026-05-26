@@ -57,6 +57,7 @@
           <div id="transcript-sub" class="muted small"></div>
         </div>
         <div class="transcript-header-actions">
+          <button id="recording-btn" class="icon-btn hidden" title="Open recording in Salesforce">▶</button>
           <button id="open-in-sf" class="icon-btn" title="Open in Salesforce">↗</button>
           <label class="live-toggle">
             <input type="checkbox" id="live-toggle" checked />
@@ -68,6 +69,7 @@
       <div class="tab-bar">
         <button class="tab active" data-tab="transcript">Transcript</button>
         <button class="tab" data-tab="workflow">Workflow</button>
+        <button class="tab" data-tab="coaching">Coaching</button>
         <button class="tab" data-tab="insights">Insights</button>
       </div>
 
@@ -91,6 +93,22 @@
           </button>
         </div>
         <p id="transcript-status" class="muted small center"></p>
+      </div>
+
+      <div id="coaching-pane" class="pane hidden">
+        <div class="coaching-toolbar">
+          <button id="coaching-generate" class="primary">Generate coaching</button>
+          <select id="coaching-mode">
+            <option value="next-steps">Next-best actions</option>
+            <option value="bant">BANT summary</option>
+            <option value="risks">Risk + objection scan</option>
+            <option value="followups">Follow-up draft (email)</option>
+            <option value="summary">2-paragraph recap</option>
+          </select>
+          <span id="coaching-meta" class="muted small"></span>
+        </div>
+        <div id="coaching-output" class="coaching-output"></div>
+        <p id="coaching-status" class="muted small center"></p>
       </div>
 
       <div id="insights-pane" class="pane hidden">
