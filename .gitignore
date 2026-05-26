@@ -4,6 +4,7 @@ key.pem
 
 # Build artifacts
 pulse-conversations-*.zip
+dist/
 
 # SFDX runtime state (project files are kept; runtime/cache is not)
 sfdx/.sf/
