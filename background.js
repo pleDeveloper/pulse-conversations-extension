@@ -39,6 +39,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             data: await matchMeeting(msg.url),
           });
           break;
+        case "sf.fetchWorkflow":
+          sendResponse({
+            ok: true,
+            data: await fetchWorkflow(msg.meetingId),
+          });
+          break;
         default:
           sendResponse({ ok: false, error: "Unknown message type" });
       }
@@ -335,6 +341,67 @@ async function matchMeeting(tabUrl) {
     totalCandidates: scored.length,
     otherUsers,
   };
+}
+
+// Map from Meeting parent reference to matching Workflow parent reference.
+const PARENT_LINKS = [
+  { meetingField: "ReferralPulse__c", workflowField: "ple__Referral__c" },
+  { meetingField: "ApplicationPulse__c", workflowField: "ple__Application__c" },
+  { meetingField: "ContactPulse__c", workflowField: "ple__ContactPulse__c" },
+  { meetingField: "AccountPulse__c", workflowField: "ple__AccountPulse__c" },
+];
+
+async function fetchWorkflow(meetingId) {
+  if (!meetingId) throw new Error("Missing meetingId.");
+  const meetingSoql =
+    `SELECT Id, AccountPulse__c, AccountPulse__r.Name, ReferralPulse__c, ` +
+    `ApplicationPulse__c, ContactPulse__c FROM ple__Meeting__c WHERE Id='${meetingId}' LIMIT 1`;
+  const mResp = await sfQuery(meetingSoql);
+  const meeting = (mResp.records || [])[0];
+  if (!meeting) return { workflow: null, actions: [], message: "Meeting not found." };
+
+  let workflow = null;
+  for (const link of PARENT_LINKS) {
+    const parentId = meeting[link.meetingField];
+    if (!parentId) continue;
+    const wSoql =
+      `SELECT Id, Name, ple__Workflow_Stage__c, ple__Is_Active__c, ` +
+      `ple__Config_Workflow_Id__c, ple__Config_Workflow__c, ` +
+      `${link.workflowField} ` +
+      `FROM ple__Workflow__c ` +
+      `WHERE ${link.workflowField}='${parentId}' AND ple__Is_Active__c=true ` +
+      `ORDER BY LastModifiedDate DESC LIMIT 1`;
+    try {
+      const wResp = await sfQuery(wSoql);
+      if (wResp.records && wResp.records.length) {
+        workflow = wResp.records[0];
+        workflow._parentLink = link;
+        workflow._parentId = parentId;
+        break;
+      }
+    } catch (_) {
+      // ignore and try next parent link
+    }
+  }
+
+  if (!workflow) {
+    const accountName = meeting.AccountPulse__r?.Name;
+    return {
+      workflow: null,
+      actions: [],
+      message: accountName
+        ? `No active workflow found for ${accountName}.`
+        : "No active workflow linked to this meeting.",
+    };
+  }
+
+  const aSoql =
+    `SELECT Id, Name, ple__Status__c, ple__Active_Workflow__c, ` +
+    `ple__Config_Action_Id__c, ple__Workflow__c, LastModifiedDate ` +
+    `FROM ple__Action__c WHERE ple__Workflow__c='${workflow.Id}' ` +
+    `ORDER BY LastModifiedDate DESC LIMIT 200`;
+  const aResp = await sfQuery(aSoql);
+  return { workflow, actions: aResp.records || [] };
 }
 
 async function fetchTranscript(meetingId) {

@@ -46,6 +46,12 @@ const els = {
   transcriptStatus: document.getElementById("transcript-status"),
   liveToggle: document.getElementById("live-toggle"),
   openInSf: document.getElementById("open-in-sf"),
+  transcriptPane: document.getElementById("transcript-pane"),
+  workflowPane: document.getElementById("workflow-pane"),
+  workflowHeader: document.getElementById("workflow-header"),
+  actionsList: document.getElementById("actions-list"),
+  workflowStatus: document.getElementById("workflow-status"),
+  tabs: document.querySelectorAll(".tab"),
   backBtn: document.getElementById("back-btn"),
   refreshBtn: document.getElementById("refresh-btn"),
   settingsBtn: document.getElementById("settings-btn"),
@@ -65,6 +71,8 @@ let activeSpeakerFilter = null;
 let lastRenderedCount = 0;
 let unseenCount = 0;
 let instanceUrl = "";
+let activeTab = "transcript";
+let workflowLoaded = false;
 
 function send(type, payload = {}) {
   return new Promise((resolve, reject) => {
@@ -242,6 +250,9 @@ async function openTranscript(meeting) {
     " · " +
     formatRelative(meeting.ple__Start_Time__c || meeting.CreatedDate);
   els.messages.innerHTML = "";
+  els.actionsList.innerHTML = "";
+  els.workflowHeader.innerHTML = "";
+  els.workflowStatus.textContent = "";
   els.transcriptStatus.textContent = "Loading…";
   els.transcriptSearch.value = "";
   transcriptSearchTerm = "";
@@ -249,10 +260,99 @@ async function openTranscript(meeting) {
   allMessages = [];
   lastRenderedCount = 0;
   unseenCount = 0;
+  workflowLoaded = false;
+  switchTab("transcript");
   updateJumpButton();
   show(els.transcriptView);
   await loadTranscript();
   startPolling();
+}
+
+function switchTab(name) {
+  activeTab = name;
+  els.tabs.forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
+  els.transcriptPane.classList.toggle("hidden", name !== "transcript");
+  els.workflowPane.classList.toggle("hidden", name !== "workflow");
+  if (name === "workflow" && !workflowLoaded) loadWorkflow();
+}
+
+async function loadWorkflow() {
+  if (!currentMeeting) return;
+  workflowLoaded = true;
+  els.actionsList.innerHTML = "";
+  els.workflowHeader.innerHTML = "";
+  els.workflowStatus.textContent = "Loading workflow…";
+  try {
+    const data = await send("sf.fetchWorkflow", {
+      meetingId: currentMeeting.Id,
+    });
+    if (!data.workflow) {
+      els.workflowStatus.textContent = data.message || "No workflow found.";
+      return;
+    }
+    renderWorkflow(data.workflow, data.actions || []);
+    els.workflowStatus.textContent = data.actions?.length
+      ? `${data.actions.length} action${data.actions.length === 1 ? "" : "s"}`
+      : "Workflow has no actions yet.";
+  } catch (e) {
+    workflowLoaded = false; // allow retry
+    els.workflowStatus.textContent = e.message;
+  }
+}
+
+function renderWorkflow(workflow, actions) {
+  els.workflowHeader.innerHTML = `
+    <div class="workflow-name">${escapeHtml(workflow.Name || "Workflow")}</div>
+    <div class="muted small workflow-meta">
+      ${escapeHtml(workflow.ple__Workflow_Stage__c || "")}
+      ${
+        instanceUrl
+          ? ` · <a href="${instanceUrl}/${workflow.Id}" target="_blank" rel="noopener">Open ↗</a>`
+          : ""
+      }
+    </div>
+  `;
+  els.actionsList.innerHTML = "";
+  const sorted = [...actions].sort((a, b) => {
+    const sa = statusWeight(a.ple__Status__c);
+    const sb = statusWeight(b.ple__Status__c);
+    if (sa !== sb) return sa - sb;
+    return (a.Name || "").localeCompare(b.Name || "");
+  });
+  for (const a of sorted) {
+    const card = document.createElement("button");
+    card.className = "action-card status-" + statusClass(a.ple__Status__c);
+    card.innerHTML = `
+      <div class="action-row-top">
+        <span class="status-pill">${escapeHtml(a.ple__Status__c || "—")}</span>
+        <span class="action-name">${escapeHtml(a.Name || "Action")}</span>
+      </div>
+      <div class="muted small">Updated ${formatRelative(a.LastModifiedDate)}</div>
+    `;
+    card.addEventListener("click", () => {
+      if (instanceUrl) chrome.tabs.create({ url: `${instanceUrl}/${a.Id}` });
+    });
+    els.actionsList.appendChild(card);
+  }
+}
+
+function statusClass(status) {
+  const s = (status || "").toLowerCase();
+  if (!s) return "none";
+  if (s.includes("complete") || s.includes("done")) return "done";
+  if (s.includes("hold") || s.includes("blocked")) return "hold";
+  if (s.includes("progress") || s.includes("active") || s.includes("open")) return "open";
+  return "other";
+}
+
+function statusWeight(status) {
+  switch (statusClass(status)) {
+    case "open": return 0;
+    case "other": return 1;
+    case "hold": return 2;
+    case "done": return 3;
+    default: return 4;
+  }
 }
 
 async function loadTranscript() {
@@ -611,6 +711,10 @@ els.jumpLatest.addEventListener("click", () => {
   updateJumpButton();
 });
 
+els.tabs.forEach((t) =>
+  t.addEventListener("click", () => switchTab(t.dataset.tab))
+);
+
 els.openInSf.addEventListener("click", () => {
   if (instanceUrl && currentMeeting?.Id) {
     chrome.tabs.create({ url: `${instanceUrl}/${currentMeeting.Id}` });
@@ -650,8 +754,16 @@ els.backBtn.addEventListener("click", () => {
 });
 
 els.refreshBtn.addEventListener("click", () => {
-  if (!els.transcriptView.classList.contains("hidden")) loadTranscript();
-  else loadMeetings(lastSearchTerm);
+  if (!els.transcriptView.classList.contains("hidden")) {
+    if (activeTab === "workflow") {
+      workflowLoaded = false;
+      loadWorkflow();
+    } else {
+      loadTranscript();
+    }
+  } else {
+    loadMeetings(lastSearchTerm);
+  }
 });
 
 els.settingsBtn.addEventListener("click", () =>

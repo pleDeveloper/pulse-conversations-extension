@@ -64,25 +64,39 @@
           </label>
         </div>
       </div>
-      <div class="transcript-toolbar">
-        <div class="transcript-search-wrap">
-          <input
-            id="transcript-search"
-            type="search"
-            placeholder="Search in transcript…"
-            autocomplete="off"
-          />
-          <span id="transcript-search-count" class="muted small"></span>
+
+      <div class="tab-bar">
+        <button class="tab active" data-tab="transcript">Transcript</button>
+        <button class="tab" data-tab="workflow">Workflow</button>
+      </div>
+
+      <div id="transcript-pane" class="pane">
+        <div class="transcript-toolbar">
+          <div class="transcript-search-wrap">
+            <input
+              id="transcript-search"
+              type="search"
+              placeholder="Search in transcript…"
+              autocomplete="off"
+            />
+            <span id="transcript-search-count" class="muted small"></span>
+          </div>
         </div>
+        <div id="speaker-chips" class="speaker-chips"></div>
+        <div class="messages-wrap">
+          <div id="messages" class="messages"></div>
+          <button id="jump-latest" class="jump-latest hidden">
+            <span>↓</span> <span id="jump-latest-text">Jump to latest</span>
+          </button>
+        </div>
+        <p id="transcript-status" class="muted small center"></p>
       </div>
-      <div id="speaker-chips" class="speaker-chips"></div>
-      <div class="messages-wrap">
-        <div id="messages" class="messages"></div>
-        <button id="jump-latest" class="jump-latest hidden">
-          <span>↓</span> <span id="jump-latest-text">Jump to latest</span>
-        </button>
+
+      <div id="workflow-pane" class="pane hidden">
+        <div id="workflow-header" class="workflow-header"></div>
+        <div id="actions-list" class="actions-list"></div>
+        <p id="workflow-status" class="muted small center"></p>
       </div>
-      <p id="transcript-status" class="muted small center"></p>
     </section>
 
     <script src="sidepanel.js" type="module"></script>
